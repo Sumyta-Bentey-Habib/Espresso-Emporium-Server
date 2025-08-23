@@ -4,7 +4,7 @@ require('dotenv').config();
 const cors = require('cors');
 const app = express()
 const port = process.env.PORT || 3000;
-
+app.use(express.json());
 app.use(cors());
 
 const uri = `mongodb+srv://${process.env.DB_USERS}:${process.env.DB_PASSWORD}@cluster0.uteipwi.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
@@ -24,6 +24,27 @@ async function run() {
     //await client.connect();
     // Send a ping to confirm a successful connection
     //await client.db("admin").command({ ping: 1 });
+  
+     //user collection in database
+app.post("/users", async (req, res) => {
+  try {
+    const user = req.body;
+    const db = client.db("espressoDB"); 
+    const usersCollection = db.collection("users");
+
+    // check if user already exists
+    const existing = await usersCollection.findOne({ email: user.email });
+    if (existing) {
+      return res.status(200).json({ message: "User already exists" });
+    }
+
+    const result = await usersCollection.insertOne(user);
+    res.status(201).json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
     console.log("Pinged your deployment. You successfully connected to MongoDB!");
   } 
   

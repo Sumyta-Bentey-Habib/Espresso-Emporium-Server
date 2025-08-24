@@ -10,7 +10,6 @@ app.use(express.json());
 app.use(cors());
 
 const uri = `mongodb+srv://${process.env.DB_USERS}:${process.env.DB_PASSWORD}@cluster0.uteipwi.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
-
 const client = new MongoClient(uri, {
   serverApi: { version: ServerApiVersion.v1, strict: true, deprecationErrors: true },
 });
@@ -23,6 +22,7 @@ async function run() {
     const usersCollection = db.collection("users");
     const productsCollection = db.collection("products");
     const cartCollection = db.collection("cart");
+    const reviewsCollection = db.collection("reviews");
 
     // ----------------- USERS -----------------
     app.post("/users", async (req, res) => {
@@ -99,7 +99,7 @@ async function run() {
       res.json(result);
     });
 
-    // ----------------- CART (Buyer) -----------------
+    // ----------------- CART -----------------
     app.post("/cart", async (req, res) => {
       const cartItem = req.body;
       const result = await cartCollection.insertOne(cartItem);
@@ -118,13 +118,55 @@ async function run() {
       res.json(result);
     });
 
+    // ----------------- REVIEWS -----------------
+    app.post("/reviews", async (req, res) => {
+      const review = req.body;
+      review.createdAt = new Date();
+      const result = await reviewsCollection.insertOne(review);
+      res.status(201).json(result);
+    });
+
+    app.get("/reviews/:coffeeId", async (req, res) => {
+      const { coffeeId } = req.params;
+      const reviews = await reviewsCollection.find({ coffeeId }).toArray();
+      res.json(reviews);
+    });
+
+    // DELETE review: Only Admin or Seller of the coffee
+    app.delete("/reviews/:id", async (req, res) => {
+      const { id } = req.params;
+      const { requesterId } = req.query;
+
+      if (!ObjectId.isValid(id) || !ObjectId.isValid(requesterId)) {
+        return res.status(400).json({ message: "Invalid ID" });
+      }
+
+      const review = await reviewsCollection.findOne({ _id: new ObjectId(id) });
+      if (!review) return res.status(404).json({ message: "Review not found" });
+
+      const requester = await usersCollection.findOne({ _id: new ObjectId(requesterId) });
+      if (!requester) return res.status(403).json({ message: "Unauthorized" });
+
+      const coffee = await productsCollection.findOne({ _id: new ObjectId(review.coffeeId) });
+      if (!coffee) return res.status(404).json({ message: "Coffee not found" });
+
+      if (requester.role !== "Admin" && requester.email !== coffee.sellerEmail) {
+        return res.status(403).json({ message: "Permission denied: Only Admin or Seller can delete this review" });
+      }
+
+      const result = await reviewsCollection.deleteOne({ _id: new ObjectId(id) });
+      res.json({ message: "Review deleted successfully", result });
+    });
+
     // ----------------- ADMIN STATS -----------------
     app.get("/admin/stats", async (req, res) => {
       const totalBuyers = await usersCollection.countDocuments({ role: "Buyer" });
       const totalSellers = await usersCollection.countDocuments({ role: "Seller" });
       const totalProducts = await productsCollection.countDocuments();
-      res.json({ totalBuyers, totalSellers, totalProducts });
+      const totalReviews = await reviewsCollection.countDocuments();
+      res.json({ totalBuyers, totalSellers, totalProducts, totalReviews });
     });
+
   } finally {
     // optional cleanup
   }
@@ -133,4 +175,4 @@ async function run() {
 run().catch(console.dir);
 
 app.get("/", (req, res) => res.send("Hello World!"));
-app.listen(port, () => console.log(`Expresso-Emporium listening on port ${port}`));
+app.listen(port, () => console.log(`Espresso-Emporium listening on port ${port}`));

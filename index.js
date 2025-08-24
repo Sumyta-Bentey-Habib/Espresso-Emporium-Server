@@ -70,12 +70,23 @@ async function run() {
       res.status(201).json(result);
     });
 
+    // ✅ SINGLE GET PRODUCTS ROUTE (search by name only)
     app.get("/products", async (req, res) => {
       const { search } = req.query;
-      const query = search
-        ? { $or: [{ name: { $regex: search, $options: "i" } }, { company: { $regex: search, $options: "i" } }] }
-        : {};
+      const query = search ? { name: { $regex: search, $options: "i" } } : {};
       const products = await productsCollection.find(query).toArray();
+
+      // Attach seller info
+      for (let product of products) {
+        if (product.sellerEmail) {
+          const seller = await usersCollection.findOne({ email: product.sellerEmail });
+          if (seller) {
+            product.sellerName = seller.name;
+            product.sellerLocation = seller.location;
+          }
+        }
+      }
+
       res.json(products);
     });
 
@@ -83,6 +94,15 @@ async function run() {
       const { id } = req.params;
       const product = await productsCollection.findOne({ _id: new ObjectId(id) });
       if (!product) return res.status(404).json({ message: "Product not found" });
+
+      if (product.sellerEmail) {
+        const seller = await usersCollection.findOne({ email: product.sellerEmail });
+        if (seller) {
+          product.sellerName = seller.name;
+          product.sellerLocation = seller.location;
+        }
+      }
+
       res.json(product);
     });
 
@@ -132,7 +152,6 @@ async function run() {
       res.json(reviews);
     });
 
-    // DELETE review: Only Admin or Seller of the coffee
     app.delete("/reviews/:id", async (req, res) => {
       const { id } = req.params;
       const { requesterId } = req.query;
@@ -156,15 +175,6 @@ async function run() {
 
       const result = await reviewsCollection.deleteOne({ _id: new ObjectId(id) });
       res.json({ message: "Review deleted successfully", result });
-    });
-
-    // ----------------- ADMIN STATS -----------------
-    app.get("/admin/stats", async (req, res) => {
-      const totalBuyers = await usersCollection.countDocuments({ role: "Buyer" });
-      const totalSellers = await usersCollection.countDocuments({ role: "Seller" });
-      const totalProducts = await productsCollection.countDocuments();
-      const totalReviews = await reviewsCollection.countDocuments();
-      res.json({ totalBuyers, totalSellers, totalProducts, totalReviews });
     });
 
   } finally {
